@@ -7,7 +7,7 @@ See make.note for more details.
 
 ### Setup
 
-export PREFIX= place where you'd like to have the software installed,
+export PREFIX= installation home, like /usr/local or /home/sue
 
 export IDL_BIN= path to idl version to build against
 
@@ -17,15 +17,10 @@ export DAS_TEMP= your prefered log file location
 
 ### Build/Install/Test
 
-build:
-gmake
-
-install:
-gmake install
-
-test:
-gmake test
-kview build*/*.gif
+1. gmake
+2. gmake install
+3. gmake test
+4. display build*/*.gif
 
 ### Usage
 
