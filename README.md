@@ -1,6 +1,11 @@
 # das1-giferator
 Server-side graphics engine for The University of Iowa plasma wave group das (or das1 or das classic) system
 
+Giferator utilizes the [Harris Geospatial IDL language](http://www.harrisgeospatial.com/SoftwareTechnology/IDL.aspx).
+It was initially designed as a CGI application for web servers such that HTML forms could specify datasets,
+detailed plot layout, readers, and reader parameters.  The plot generator can also be used in scripts that specify
+the sequence of high-level configuration commands and instructions for the IDL program to execute to generate plot files.
+
 ## Giferator build/install notes
 
 See make.note for more details.
