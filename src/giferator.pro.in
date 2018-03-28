@@ -1,0 +1,1203 @@
+;------------------------------------------------------------------------
+;
+; giferator.pro written by L. Granroth  06-22-94
+; as a proof-of-concept graphics engine for dynamically generating GIF
+; images from a relatively simple description of graphical elements
+; for scientific displays.
+;
+; 11-01-95 major modifications underway for single-plot invocation from
+;          Web form interface.  LJG
+; 08-29-96 finally messing with it again . . . LJG
+; 10-04-96 adding "time correlated annotation" to axis structure.  LJG
+; 02-24-97 adding "x_multi_y" handling for "plot" types.  LJG
+; 09-08-97 "switch" added to plots.  (should do this for more)  LJG
+; 11-20-98 "x_y_z" handling for "image" types and dasbin added.  LJG
+; 10-12-99 modifications for encapsulated postscript output.  LJG
+;          This was tricky.  Parts of IDL use device units of cm, most
+;          use thousandths of cm, while other utilities use points (72nds
+;          of an inch).  Note that "tv" requires xsize and ysize.  Also
+;          note that PS-related scalings are done and un-done at various
+;	   stages.  The UNIX utility epsffit is useful for sizing, rotating,
+;          and printing the resulting eps files.
+; 2001-03-07 completed option for "label" objects.  LJG
+; 2003-05-07 fixed a bug preventing PostScript fonts from being used
+;            for axis labels in some cases.  LJG
+; 2012-10-26 attempt to make compatible with current IDL.  LJG
+;            "switch" field renamed "enable" (will break code)
+; 2012-10-30 added lookup of datasetroot from env variable to help with
+;            make test targets
+; 2012-12-06 variable batchgifname.  LJG
+;
+;------------------------------------------------------------------------
+
+; initialization procedure
+
+pro initvar, dest, source
+if n_elements (dest) eq 0 then dest = source
+end
+
+; resizing (or re-initializing) procedure
+
+pro resizevar, array, element, newsize
+; if n_elements (array) ne newsize and newsize gt 0 then $
+if newsize gt 0 then array = replicate (element, newsize) $
+else array = [element]
+end
+
+; load string if empty
+
+pro loadstr, dest, source
+if dest eq '' and n_elements (source) gt 0 then dest = source
+end
+
+;- giferator ------------------------------------------------------------
+
+pro giferator
+
+; things that should be handled in environment variables
+
+datasetroot = getenv('DAS_DATASETROOT') + '/'
+if datasetroot eq '/' then datasetroot = '%(DAS_DATASETROOT)s'
+
+dastempdir = getenv('DAS_TEMP')
+if dastempdir eq '' then dastempdir = '%(DAS_TEMP)s'
+
+gifmoddir = getenv('DAS_LIBDIR')
+if gifmoddir eq '' then gifmoddir = '%(INST_IDLLIB)s'
+
+; dataset forms (need some way of describing type)
+
+; lrbt_image 	= 1
+; lrtb_image 	= 2
+; btlr_image 	= 3
+
+x_tagged_y_scan = 11
+y_tagged_x_scan = 12
+
+x_y_z           = 21
+
+x_multi_y	= 31
+
+color_wedge     = 91
+
+; other constants
+
+on		= 1
+off		= 0
+
+; line types
+
+solid		= 0
+dotted		= 1
+dashed		= 2
+dash_dot	= 3
+dash_dot_dot_dot = 4
+long_dashes	= 5
+histogram	= 10
+
+no_label	= replicate (' ', 30)
+reset_label	= replicate ('', 30)
+exact		= 1
+suppress	= 4
+supress		= suppress ; historical mispelling :-}
+no_box		= 8
+
+; batch image creation option
+
+batch = 0
+
+; display layout and element description variables and structures
+
+initvar, rows, 1
+initvar, columns, 1
+initvar, colormaps, 1
+initvar, sets, 1
+initvar, queries, 1
+
+initvar, images, 0
+initvar, axes, 0
+initvar, labels, 0
+initvar, plots, 0
+
+initvar, gray, 255b - byte (findgen(200) * 255.0 / 199.0)
+
+initvar, ctable, {ctable_s, n:210, nz:200, r:gray, g:gray, b:gray, $
+  background:200, foreground:207, white:200, yellow:201, $
+  magenta:202, red:203, cyan:204, green:205, blue:206, black:207, $
+  offwhite:208, offblack:209 }
+
+initvar, display, {display_s, isize:800, jsize:600, color:ctable, $
+  filename:'idl.gif'}
+
+initvar, image_i, {image_s, row:0, column:0, colormap:0, $
+  dataset:'', xsamplewidth:-1.0, query:'', bgs:0, bgd:0}
+
+initvar, imageinfo, {imageinfo_s, lun:0, begline:0, endline:0}
+
+initvar, axis_i, {axis_s, row:0, column:0, set:0, method:'', timeaxis:'', $
+  placement:'', tca:'', xp:0.0, yp:0.0, x:!x, y:!y}
+
+initvar, label_i, {label_s, row:0, column:0, set:0, value:'', placement:'', $
+  xp:0.0, yp:0.0, orientation:0, charsize:1.0, alignment:0.0}
+
+; The plot enable (formerly switch) has to be off by default, so forms should
+; explicitly set it on, even if they don't need a checkbox, etc.
+initvar, plot_i, {plot_s, row:0, column:0, set:0, multi:0, $
+  color:255, thick:0, linestyle:0, dataset:'', query:'', enable:0}
+
+initvar, plotinfo, {plotinfo_s, lun:0, begline:0, endline:0}
+
+initvar, set_i, [!p]
+
+initvar, query_i, {query_s, query:''}
+
+initvar, row_i, {row_s, jbottom:100, jtop:500, ybottom:0.0, ytop:1.0, $
+  log:0, title:'', time:0, tbottom:'', ttop:'', jd:0L, offset:0.0}
+
+initvar, column_i, {column_s, ileft:100, iright:700, xleft:0.0, xright:1.0, $
+  log:0, title:'', time:0, tleft:'', tright:'', jd:0L, offset:0.0}
+
+initvar, colormap_i, {colormap_s, klow:0, khigh:200, zlow:0.0, zhigh:1.0, $
+  log:0, db:0, title:''}
+
+initvar, okay, 0
+
+; string array for saving dataset information
+
+initvar, ninfo, 100
+initvar, info, strarr(ninfo)
+
+initvar, data_z_fill, 1.e-32
+
+initvar, begstring, ''
+initvar, endstring, ''
+initvar, tca_items, 0
+initvar, gif_mime_header, 'image/x-das-gif'
+initvar, ps_mime_header, 'application/postscript'
+initvar, ps_font_point, 14.0
+initvar, device_name, 'Z'
+
+batchgifname = 'batch.gif'
+
+main_loop:
+
+valid_data = 0
+
+command = ''
+
+while command ne 'init' and command ne 'go' and command ne 'abort' do begin
+  printf, -2, command
+  status = execute (command)
+  read, command
+endwhile
+
+printf, -2, command
+
+if command eq 'init' then begin
+  resizevar, row,      row_i,      rows
+  resizevar, column,   column_i,   columns
+  resizevar, colormap, colormap_i, colormaps
+  resizevar, set,      set_i,      sets
+  queries = images + plots
+  resizevar, inf,      0,          queries
+  resizevar, query,    query_i,    queries
+  resizevar, image,    image_i,    images
+  resizevar, imageinfo, {imageinfo_s}, images
+  resizevar, plot,     plot_i,     plots
+  resizevar, plotinfo, {plotinfo_s}, plots
+  resizevar, axis,     axis_i,     axes
+  resizevar, label,    label_i,    labels
+  for i = 0, sets-1 do begin
+    set(i).background = display.color.background
+    set(i).color = display.color.foreground
+  endfor
+  command = ''
+  okay = rows gt 0 and columns gt 0 and sets gt 0
+  infoline = 0
+endif
+
+while command ne 'go' and command ne 'abort' do begin
+  printf, -2, command
+  status = execute (command)
+  read, command
+endwhile
+
+if command eq 'abort' then goto, abort
+
+; if not okay then do some error return (eventually)
+
+if device_name ne 'Z' and device_name ne 'PS' then device_name = 'X'
+set_plot, device_name
+
+if !d.name eq 'Z' then device, set_resolution=[display.isize,display.jsize], $
+  z_buffering=0, set_colors=display.color.n
+
+if !d.name eq 'X' then window, xsize=display.isize, ysize=display.jsize, $
+  colors=display.color.n
+
+; spew some http headers early to keep web servers from timing out
+
+if (!d.name ne 'X') and (batch eq 0) then begin
+  spawn,'echo $$',pid
+  writeu, -1, 'ETag: 1',pid,'42', 10b
+;  spawn,/noshell,['/usr/bin/date','-u','+%%a, %%d %%b %%Y %%T %%Z'],httpdate
+;  writeu, -1, 'Date: ', httpdate, 10b
+;  writeu, -1, 'Last-Modified: ', httpdate, 10b
+  writeu, -1, 'Cache-Control: no-store', 10b
+endif
+
+ps = 1
+if !d.name eq 'PS' then begin
+  !p.font = 0
+  ps = 33.333333 ; convert from points to thousandths of a cm
+;  ps = 24.0 ; convert from hundredths of an inch to throusandths of a cm
+  spawn,'echo $$',pid
+  psfile = dastempdir+'/idl'+pid(0)+'.eps'
+; display pixels map roughly to hundredths of an inch, convert to cm
+; let's try 72nds of an inch (points) to cm instead
+  device, /encap, /color, bits=8, preview=0, file=psfile, $
+    xsize=display.isize*0.033333333, ysize=display.jsize*0.033333333
+;    xsize=display.isize*0.024, ysize=display.jsize*0.024
+endif
+
+; load z colors
+
+tvlct, display.color.r, display.color.g, display.color.b, 0
+
+; load 10 fixed colors (added offwhite and offblack)
+
+c = 7 - indgen (8)
+r = ((c / 4) and 1) * 255
+g = ((c / 2) and 1) * 255
+b = (c and 1) * 255
+tvlct, [r, 254, 1], [g, 254, 1], [b, 254, 1], display.color.nz
+
+display.color.white   = display.color.nz + 0
+display.color.yellow  = display.color.nz + 1
+display.color.magenta = display.color.nz + 2
+display.color.red     = display.color.nz + 3
+display.color.cyan    = display.color.nz + 4
+display.color.green   = display.color.nz + 5
+display.color.blue    = display.color.nz + 6
+display.color.black   = display.color.nz + 7
+display.color.offwhite = display.color.nz + 8
+display.color.offblack = display.color.nz + 9
+
+; adjust default fonts for large or small plots
+
+pixels = long (display.isize) * long (display.jsize)
+
+if pixels gt (1024L * 768L) then begin
+  charsize = 1.5
+  if !d.name eq 'Z' then xyouts, '!17'
+endif else if pixels gt (640L * 480L) then begin
+  charsize = 1.0
+endif else if pixels gt (320L * 240L) then begin
+  charsize = 0.75
+endif else begin
+  charsize = 0.5
+endelse
+
+; change PostScript base font from 12 points to ps_font_point points
+if !d.name eq 'PS' then charsize = charsize * ps_font_point / 12.0
+
+; help,set,output=tmpstring
+; printf, -2, tmpstring
+if !p.charsize eq 0.0 then !p.charsize = charsize
+for i = 0, sets-1 do $
+  if set(i).charsize eq 0.0 then set(i).charsize = charsize
+;endfor
+
+if !d.name eq 'PS' then begin
+  !p.font = 0
+  if pixels gt (640L * 480L) then begin
+    if !p.charthick eq 0.0 then !p.charthick = 3
+    if !p.thick eq 0.0 then !p.thick = 3
+    if !x.thick eq 0.0 then !x.thick = 3
+    if !y.thick eq 0.0 then !y.thick = 3
+    for i = 0, sets-1 do begin
+      if set(i).charthick eq 0.0 then set(i).charthick = 3
+      if set(i).thick eq 0.0 then set(i).thick = 3
+    endfor
+    for i = 0, plots-1 do begin
+      if plot(i).thick eq 0.0 then plot(i).thick = 3
+    endfor
+    for i = 0, axes-1 do begin
+      if axis(i).x.thick eq 0.0 then axis(i).x.thick = 3
+      if axis(i).y.thick eq 0.0 then axis(i).y.thick = 3
+    endfor
+  endif
+endif
+
+if !p.font eq -1 and n_elements (defaultfont) ne 0 then begin
+  if (defaultfont gt 2) and (defaultfont lt 21) then begin
+    str = '!' + strtrim (string (fix (defaultfont)), 2)
+    xyouts, str
+  endif
+endif
+
+erase, display.color.background
+d = bin_date()
+charsize = !p.charsize / 2.0
+if charsize gt 0.6 then charsize = 0.6
+xyouts, (display.isize-2) * ps, 2 * ps, /device, charsize=charsize, $
+  color=display.color.foreground, charthick=1, $
+  '!3UIowa '+string(d(0:2),format='(i4,2i2.2)')+'!X', $
+  alignment=1.0
+
+; handle time specifications
+
+for i = 0, columns-1 do begin
+
+  if column(i).time then begin
+    jd0 = 0L
+    jd1 = 0L
+    off0 = 0.0d0
+    off1 = 0.0d0
+    if call_external (gifmoddir + '/ljgidl.so', 'str2jdoff', column(i).tleft, jd0, off0) $
+     + call_external (gifmoddir + '/ljgidl.so', 'str2jdoff', column(i).tright, jd1, off1) $
+      eq 2 then begin
+      trange = float (off1 - off0) + float (jd1 - jd0) * 86400.0
+      column(i).xleft = 0.0
+      column(i).xright = trange
+      column(i).jd = jd0
+      column(i).offset = off0
+    endif else begin
+      print, -2, $
+        'Bad time specification "'+column(i).tleft+'" "'+column(i).tright+'"'
+      column(i).xleft = 0.0
+      column(i).xright = 0.0
+      column(i).jd = 0L
+      column(i).offset = 0.0
+      column(i).time = 0
+    endelse
+  endif
+
+endfor
+
+for i = 0, rows-1 do begin
+
+  if row(i).time then begin
+    jd0 = 0L
+    jd1 = 0L
+    off0 = 0.0d0
+    off1 = 0.0d0
+    if call_external (gifmoddir + 'ljgidl.so', 'str2jdoff', row(i).tbottom, jd0, off0) $
+     + call_external (gifmoddir + 'ljgidl.so', 'str2jdoff', row(i).ttop, jd1, off1) $
+      eq 2 then begin
+      trange = float (off1 - off0) + float (jd1 - jd0) * 86400.0
+      row(i).xbottom = 0.0
+      row(i).xtop = trange
+      row(i).jd = jd0
+      row(i).offset = off0
+    endif else begin
+      print, $
+        'Bad time specification "'+row(i).tbottom+'" "'+row(i).ttop+'"'
+      row(i).xbottom = 0.0
+      row(i).xtop = 0.0
+      row(i).jd = 0L
+      row(i).offset = 0.0
+      row(i).time = 0
+    endelse
+  endif
+
+endfor
+
+; index for list of queries
+
+iq = 0
+
+; first load dataset info and submit image requests
+
+for i = 0, images-1 do begin
+
+  if imageinfo(i).lun ne 0 then free_lun, imageinfo(i).lun
+  imageinfo(i).lun = 0
+  imageinfo(i).begline = infoline
+  imageinfo(i).endline = infoline
+  want_reader = 1
+
+  if image(i).row ge 0 and image(i).row lt rows and $
+    image(i).column ge 0 and image(i).column lt columns and $
+    image(i).colormap ge 0 and image(i).colormap lt colormaps $
+    and image(i).dataset ne '' then begin
+
+    ic = image(i).column
+
+;   default query (needs generalization)
+
+    if column(ic).time ne 0 then begin
+      querystring = ' "'+column(ic).tleft+'" "'+column(ic).tright+'"'
+    endif else querystring = ""
+
+    if image(i).query ne "" then $
+      querystring = querystring+' "'+image(i).query+'"'
+
+;   track queries
+
+    query(iq).query = querystring
+    iq = iq + 1
+
+    get_lun, inf
+    openr, inf, datasetroot + image(i).dataset
+    while not eof(inf) do begin
+      if infoline ge ninfo then begin
+        info = [info, strarr (100)]
+	ninfo = ninfo + 100
+      endif
+      readf, inf, command
+      command = strtrim (command, 2)
+      if strmid (command, 0, 1) ne ';' then $
+        if strpos (command, '=') gt 0 then begin
+          info(infoline) = command
+          infoline = infoline + 1
+          if want_reader then $
+	    if strlowcase (strmid (command, 0, 6)) eq 'reader' then $
+              if execute ('data_'+command) then begin
+	        if strlowcase (data_reader) eq 'color wedge' then begin
+		  info(infoline-1) = 'form = color_wedge'
+		  lun = -1
+		endif else begin
+	          printf, -2, 'spawn, '+data_reader+querystring
+                  spawn, data_reader+querystring, unit=lun
+		endelse
+	        imageinfo(i).lun = lun
+                want_reader = 0
+	      endif
+	    ;endif
+	  ;endif
+        endif
+      ;endif
+    endwhile
+    close, inf
+    free_lun, inf
+    imageinfo(i).endline = infoline - 1
+
+  endif
+
+endfor ; submit all image requests
+
+; now load dataset info and submit requests for all plots (except multis)
+
+for i = 0, plots-1 do begin
+
+  if plot(i).enable ne 0 and plot(i).row ge 0 and plot(i).row lt rows and $
+    plot(i).column ge 0 and plot(i).column lt columns and $
+    plot(i).set ge 0 and plot(i).set lt sets and $
+    plot(i).multi eq 0 and plot(i).dataset ne '' then begin
+
+    if plotinfo(i).lun ne 0 then free_lun, plotinfo(i).lun
+    plotinfo(i).lun = 0
+    plotinfo(i).begline = infoline
+    plotinfo(i).endline = infoline
+    want_reader = 1
+
+    ic = plot(i).column
+
+;   default query (needs generalization)
+
+    if column(ic).time ne 0 then begin
+      querystring = ' "'+column(ic).tleft+'" "'+column(ic).tright+'"'
+    endif else querystring = ""
+
+    if plot(i).query ne "" then $
+      querystring = querystring+' "'+plot(i).query+'"'
+
+;   track queries
+
+    query(iq).query = querystring
+    iq = iq + 1
+
+    get_lun, inf
+    openr, inf, datasetroot + plot(i).dataset
+    while not eof(inf) do begin
+      if infoline ge ninfo then begin
+        info = [info, strarr (100)]
+	ninfo = ninfo + 100
+      endif
+      readf, inf, command
+      command = strtrim (command, 2)
+      if strmid (command, 0, 1) ne ';' then $
+        if strpos (command, '=') gt 0 then begin
+          info(infoline) = command
+          infoline = infoline + 1
+          if want_reader then $
+	    if strlowcase (strmid (command, 0, 6)) eq 'reader' then $
+              if execute ('data_'+command) then begin
+	        printf, -2, 'spawn, '+data_reader+querystring
+                spawn, data_reader+querystring, unit=lun
+	        plotinfo(i).lun = lun
+                want_reader = 0
+	      endif
+	    ;endif
+	  ;endif
+        endif
+      ;endif
+    endwhile
+    close, inf
+    free_lun, inf
+    plotinfo(i).endline = infoline - 1
+
+  endif
+
+endfor ; submit all plot requests
+
+; next process all image data
+
+; printf, -2, '-das- process all image data'
+
+for i = 0, images-1 do begin
+
+  if imageinfo(i).lun ne 0 then begin
+
+;   process saved dataset info
+;   a problem here is the potential of having values left over from
+;   previous processing
+
+    data_x_sample_width = 0.0
+    data_y_sample_width = -1.0
+    data_z_fill = 1.e-32
+
+    for line = imageinfo(i).begline, imageinfo(i).endline do begin
+;     printf, -2, 'data_'+info(line)
+      status = execute ('data_'+info(line))
+    endfor
+
+    ir = image(i).row
+    ic = image(i).column
+    k  = image(i).colormap
+
+;   assign some default values
+
+    loadstr, row(ir).title, data_y_parameter
+    loadstr, column(ic).title, data_x_parameter
+    loadstr, colormap(k).title, data_z_parameter
+
+;   option to override data_x_sample_width
+
+    if image(i).xsamplewidth ge 0.0 then $
+      data_x_sample_width = image(i).xsamplewidth
+
+;   load x averaged and interpolated data into array a
+
+;   need to generalize handling various forms of input data
+
+    if data_form eq x_tagged_y_scan then begin
+
+      a = xbin (imageinfo(i).lun, n_elements (data_y_coordinate), $
+        column(ic), data_x_sample_width, data_z_fill)
+
+      if (not !ERR) then valid_data = valid_data + 1;
+
+    endif else if data_form eq color_wedge then begin
+
+      isize = column(ic).iright - column(ic).ileft
+      jsize = row(ir).jtop - row(ir).jbottom
+      ksize = colormap(k).khigh - colormap(k).klow
+
+      zmin  = colormap(k).zlow
+      zmax  = colormap(k).zhigh
+      if (colormap(k).log ne 0) and (colormap(k).db eq 0) then begin
+        zmin = alog10(zmin)
+	zmax = alog10(zmax)
+      endif
+
+      a = interpolate ([zmin, zmax], findgen(ksize) / float(ksize))
+      if colormap(k).db ne 0 then begin
+        data_y_coordinate = a
+	a = a / 10.0 ; kludge for dB
+      endif
+      if colormap(k).log ne 0 then a = 10^a
+      if colormap(k).db eq 0 then data_y_coordinate = a
+
+;     Note that we're assuming a verticle color wedge image here
+      a = rebin (transpose (a), isize, ksize, /sample)
+      row(ir).ybottom = colormap(k).zlow
+      row(ir).ytop = colormap(k).zhigh
+      row(ir).log = colormap(k).log
+
+;     If dB then color wedge labels are always linear
+      if colormap(k).db ne 0 then row(ir).log = 0
+
+;   handle arrays of xyz triples
+
+    endif else if data_form eq x_y_z then begin
+
+;     set a default verticle interpolation reasonable for our
+;     log frequency plots
+
+      if n_elements(data_y_sample_width) eq 1 and $
+        data_y_sample_width lt 0.0 then $
+        data_y_sample_width = [row(ir).ybottom*10.0, row(ir).ytop*10.0]
+
+;     dasbin reads and interpolates in both dimensions
+        
+      a = dasbin (imageinfo(i).lun, row(ir), column(ic), $
+            data_y_sample_width, data_x_sample_width, data_z_fill)
+
+      if (not !ERR) then valid_data = valid_data + 1;
+
+    endif ; data type
+
+    if imageinfo(i).lun gt 0 then begin
+      close, imageinfo(i).lun
+      free_lun, imageinfo(i).lun
+    endif
+    imageinfo(i).lun = 0
+
+;   interpolate in y (except for x_y_z form)
+
+    if data_form ne x_y_z then begin
+
+      jsize = row(ir).jtop - row(ir).jbottom
+      initvar, data_z_fill, 0.0
+
+      if row(ir).log then $
+        a = sinterp (a, alog10 (data_y_coordinate), jsize, $
+          alog10 (row(ir).ybottom), alog10 (row(ir).ytop), 0, data_z_fill) $
+      else $
+        a = sinterp (a, data_y_coordinate, jsize, $
+          row(ir).ybottom, row(ir).ytop, 0, data_z_fill)
+
+    endif ; x_tagged_y_scan
+
+;   do optional background subtraction or division
+
+    if image(i).bgd ne 0 then percent = image(i).bgd $
+    else if image(i).bgs ne 0 then percent = image(i).bgs $
+    else percent = 0
+
+    if percent ne 0 then begin
+      ny = row(ir).jtop - row(ir).jbottom
+      for j = 0, ny - 1 do begin
+	rowdata = a(*,j)
+	; Note requirement on the use of "data_z_fill"
+;	hasdata = where(rowdata ne data_z_fill)
+	hasdata = where(rowdata gt 1.e-20)
+	n = n_elements(hasdata)
+	if n gt 2 then begin
+	  rowdata = rowdata(hasdata)
+	  isort = sort(rowdata)
+          ; assume percent is a percentage of the sort order
+          index = fix(float(n) * float(percent) / 100.0)
+          index = index < (n-1) > 0
+;	  background = total(rowdata(isort(0:index))) / float(index+1)
+	  background = rowdata(isort(index))
+;	  printf,-2,'bg ',background
+	  if image(i).bgd ne 0 then begin
+	    if background ne 0.0 then a(*,j) = a(*,j) / background
+	  endif else a(*,j) = a(*,j) - background
+	  ; Note the subtraction may yield zero or negative values
+        endif
+      endfor
+    endif
+
+;   now scale to pixels and plot the image
+
+    ksize = colormap(k).khigh - colormap(k).klow
+    kmin  = byte (colormap(k).klow)
+
+;   Data scaling min and max may be data units or dB.
+;   If they're dB, then we assume the values in "a" are ratios of power
+;   to be plotted logarithmically or differences of log power to
+;   be plotted linearly.
+
+    zmin = colormap(k).zlow
+    zmax = colormap(k).zhigh
+    if colormap(k).db then begin
+      zmin = zmin / 10.0
+      zmax = zmax / 10.0
+    endif else if colormap(k).log then begin
+      zmin = alog10(zmin)
+      zmax = alog10(zmax)
+    endif
+
+    if colormap(k).log then $
+      a = bytscl (alog10(a), min=zmin, max=zmax, top=ksize-1) + kmin $
+    else $
+      a = bytscl (a, min=zmin, max=zmax, top=ksize-1) + kmin
+
+    if ps eq 1 then tv, a, column(ic).ileft, row(ir).jbottom $
+    else tv, a, column(ic).ileft * ps, row(ir).jbottom * ps, $
+      xsize = (column(ic).iright - column(ic).ileft) * ps, $
+      ysize = (row(ir).jtop - row(ir).jbottom) * ps
+
+  endif else print, 'bad image', i
+
+endfor ; all images
+
+; save default !PLT structure
+
+; psave = !p
+
+; next do all plots
+
+; printf, -2, '-das- do all plots'
+
+for i = 0, plots-1 do begin
+
+  if plot(i).enable ne 0 then begin
+
+  ic = plot(i).column
+  ir = plot(i).row
+  is = plot(i).set
+
+  if plotinfo(i).lun ne 0 and plot(i).multi eq 0 then begin
+
+;   initialize defaults and then process saved dataset info
+
+    data_form = x_multi_y
+    data_ny = 1
+    data_x_sample_width = abs (column(ic).xright - column(ic).xleft)
+    data_y_fill = 1.e-32
+
+    for line = plotinfo(i).begline, plotinfo(i).endline do begin
+;     printf, -2, 'data_'+info(line)
+      status = execute ('data_'+info(line))
+    endfor
+
+;   need to generalize handling various forms of input data
+
+    if data_form eq x_multi_y then begin
+
+      a = xbin (plotinfo(i).lun, data_ny, column(ic), $
+                data_x_sample_width, data_y_fill)
+      if not !ERR then valid_data = valid_data + 1;
+
+    endif
+
+    ; close the pipe
+
+    if plotinfo(i).lun gt 0 then begin
+      close, plotinfo(i).lun
+      free_lun, plotinfo(i).lun
+    endif
+    plotinfo(i).lun = 0
+
+    ; number of x coordinates (pixel columns)
+
+    nx = column(ic).iright - column(ic).ileft
+    
+  endif ; plot requires data to be loaded
+
+; if any data needs to be plotted, plot it
+
+  iy = plot(i).multi
+
+  if iy ge 0 and iy lt data_ny then begin
+
+    !p = set(is)
+
+    ; set up clipping and scaling
+
+    clip = [column(ic).ileft, row(ir).jbottom, column(ic).iright, row(ir).jtop]
+
+    if row(ir).log then begin
+      y0 = alog10 (row(ir).ybottom)
+      yrange = alog10 (row(ir).ytop) - y0
+      fill = alog10 (data_y_fill)
+      a(*,iy) = alog10 (a(*,iy))
+;      a = alog10 (a)
+    endif else begin
+      y0 = row(ir).ybottom
+      yrange = row(ir).ytop - y0
+      fill = data_y_fill
+    endelse
+    if yrange eq 0.0 then yrange = 1.0
+    yscale = float (row(ir).jtop - row(ir).jbottom) / yrange
+
+    ; add code for handling different plot types here
+
+    ; now draw the segments
+
+    if plot(i).linestyle ne histogram then begin
+
+      pen = 0
+
+      for ix = 0, nx-1 do begin
+        if a(ix,iy) ne fill then begin
+          icoord = column(ic).ileft + ix
+          jcoord = row(ir).jbottom + fix ((a(ix,iy) - y0) * yscale)
+	  plots, icoord * ps, jcoord * ps, clip=clip * ps, noclip=0, $
+	    color=plot(i).color, $
+	    thick=plot(i).thick, linestyle=plot(i).linestyle, $
+	    continue=pen, /device
+	  pen = 1
+        endif else pen = 0
+      endfor
+
+    endif else begin
+
+      for ix = 0, nx-1 do begin
+        if a(ix,iy) ne fill then begin
+	  icoord = column(ic).ileft + ix
+	  jcoord = row(ir).jbottom + fix ((a(ix,iy) - y0) * yscale)
+	  plots, [icoord, icoord] * ps, [row(ir).jbottom, jcoord] * ps, $
+	    clip=clip * ps, noclip=0, color=plot(i).color, $
+	    plot(i).thick, linestyle=solid, /device
+	endif
+      endfor
+
+    endelse
+
+  endif
+
+  endif ; enable is nonzero
+
+endfor ; all plots
+
+nq = iq
+
+; next do all axes
+
+; printf, -2, '-das- do all axes'
+
+for i = 0, axes-1 do begin
+
+  if axis(i).row ge 0 and axis(i).row lt rows and $
+    axis(i).column ge 0 and axis(i).column lt columns and $
+    axis(i).set ge 0 and axis(i).set lt sets then begin
+
+    ir = axis(i).row
+    ic = axis(i).column
+    is = axis(i).set
+
+    loadstr, axis(i).x.title, column(ic).title
+    loadstr, axis(i).y.title, row(ir).title
+
+    iw = column(ic).iright - column(ic).ileft
+    ; nt = 75 ; pixels per tick should be some function of character width
+    nt = !d.x_ch_size / ps * 12.5 ; change to 14 for fewer ticks
+    if axis(i).x.charsize ne 0.0 then nt = nt * axis(i).x.charsize $
+    else if set(is).charsize ne 0.0 then nt = nt * set(is).charsize
+
+    if axis(i).x.style eq 0 then axis(i).x.style = 1
+    if axis(i).y.style eq 0 then axis(i).y.style = 1
+    xtype = column(ic).log
+    axis(i).x.type = xtype
+    ytype = row(ir).log
+    axis(i).y.type = ytype
+    axis(i).x.range = [column(ic).xleft, column(ic).xright]
+    axis(i).y.range = [row(ir).ybottom, row(ir).ytop]
+
+    ; initialize possible time correlated annotation variables
+
+    tca_reader = ''
+    lun = 0
+    tca_items = 0
+    buf = 0
+
+    method = strlowcase (axis(i).method)
+    timeaxis = strlowcase (axis(i).timeaxis)
+
+    if timeaxis ne '' then begin
+
+      if strpos (timeaxis, 'x') ge 0 and column(ic).time ne 0 then begin
+
+	jd = column(ic).jd
+	t0 = column(ic).offset
+	t1 = t0 + column(ic).xright
+	nticks = axis(i).x.ticks
+	if nticks eq 0 then begin
+	  nticks = fix (iw / nt)
+	  if nticks lt 3 then nticks = 3
+	endif
+	formstring=''
+	tnaxes, t0, t1, nticks, mjt0, mjt1, mjtinc, mnt0, mnt1, mntinc, form=formstring
+
+	nticks = 0
+	for tick = mjt0, mjt1, mjtinc do begin
+	  axis(i).x.tickv(nticks) = tick - t0
+	  if axis(i).x.tickname(nticks) ne ' ' then $
+	    axis(i).x.tickname(nticks) = dt_tm_mak (jd, tick, format=formstring)
+	  nticks = nticks + 1
+	endfor
+
+	axis(i).x.ticks = nticks - 1
+	axis(i).x.minor = mjtinc / mntinc
+
+	; get time strings for begin and end times
+
+	; begstring = jd2date (jd)
+	; endstring = begstring
+	; dt_tm_inc, begstring, t0, format='$Y-$n-$d $h:$m:$s'
+	; dt_tm_inc, endstring, t1, format='$Y-$n-$d $h:$m:$s'
+
+	; kludge for time correlated annotations
+
+	if axis(i).tca ne '' then begin
+
+	  get_lun, inf
+	  openr, inf, datasetroot + axis(i).tca
+	  ; should test for success
+	  while not eof (inf) do begin
+	    readf, inf, command
+	    command = strtrim (command, 2)
+	    if (strmid (command, 0, 1) ne ';') and $
+	       (strpos (command, '=') gt 0) then begin
+	      if execute ('tca_'+command) then begin
+	        ; printf, -2, 'tca_'+command
+	        if (n_elements (buf) le 1) and (tca_items gt 0) then begin
+		  buf = fltarr (tca_items + 1)
+		  tca_label = replicate ('', tca_items)
+		  tca_format = replicate ('(G9.2)   ', tca_items)
+		endif
+	      endif else printf, -2, 'invalid tca command: ', command
+	    endif
+	  endwhile
+	  close, inf
+	  free_lun, inf
+
+	  if tca_reader ne '' then begin
+
+	    querystring = string (long (mjtinc))
+	    datestring = jd2date (jd)
+	    dt_tm_inc, datestring, mjt0
+	    querystring = querystring + ' "' + datestring + '"'
+
+;	    fix end time sometimes too late
+;	    dt_tm_inc, datestring, column(ic).xright + 1.0 ; bug
+
+	    dt_tm_inc, datestring, t1 - mjt0 + 1.0
+	    querystring = querystring + ' "' + datestring + '"'
+
+	    ; spawn the tca reader
+
+	    printf, -2, 'spawn, ' + tca_reader + querystring
+	    spawn, tca_reader + querystring, unit=lun
+
+	  endif ; tca_reader
+
+	endif ; time correlated annotations
+
+      endif ; x is time axis
+
+      if strpos (timeaxis, 'y') ge 0 and row(ir).time ne 0 then begin
+
+	jd = row(ir).jd
+	t0 = row(ir).offset
+	t1 = t0 + row(ir).ytop
+
+	; etc
+
+      endif ; y is time axis
+
+    endif ; timeaxis
+
+    ; set up for writing annotations
+
+    !p = set(is)
+    if !d.name eq 'PS' then !p.font = 0
+    if !p.title ne '' then !p.title = !p.title+'!C'
+    !x = axis(i).x
+    !y = axis(i).y
+
+    ; adjust main title and x axis title for time correlated annotations
+
+    if lun ne 0 then begin
+      !x.title = ''
+      if !p.title ne '' then !p.title = !p.title+'!C'
+    endif
+
+    ; draw axes and titles
+
+    if method eq '' or method eq 'plot' then begin
+
+      plot, /noerase, /nodata, $
+	xtype=xtype, [column(ic).xleft, column(ic).xright], $
+	ytype=ytype, [row(ir).ybottom, row(ir).ytop], $
+	position = [column(ic).ileft, row(ir).jbottom, $
+	  column(ic).iright, row(ir).jtop] * ps, /device
+
+    endif else if method eq 'axis' then begin
+
+    endif else printf, -2, 'bad axis method ', method
+
+    ; do any time correlated annotations
+
+    if lun ne 0 then begin ; retrieve all of the tca data
+
+      ; positioning variables
+
+      ichsize = !p.charsize * !d.x_ch_size / ps
+      jchsize = !p.charsize * !d.y_ch_size / ps * 1.5
+      jticksize = abs ((row(ir).jtop - row(ir).jbottom) * !p.ticklen)
+      jchorg  = row(ir).jbottom - jchsize - jticksize
+
+      mjtoff = mjt0 - t0 ; time offset of first major tick
+      while mjtoff lt 0.0 do mjtoff = mjtoff + 86400.0
+
+      ; x title on top or bottom
+
+      ipos = (column(ic).ileft + column(ic).iright) / 2
+      if !p.title ne '' then jpos = row(ir).jtop + jticksize + jchsize / 3 $
+      else jpos = fix (jchorg - (tca_items + 1) * jchsize)
+      xyouts, ipos * ps, jpos * ps, strtrim (axis(i).x.title, 2), $
+        /device, alignment=0.5, charsize=!p.charsize
+
+      ; row labels
+
+      ipos = column(ic).ileft - ichsize * 4
+      xyouts, ipos * ps, jchorg * ps, 'SCET', /device, alignment=1.0, charsize=!p.charsize
+      for j = 1, tca_items do begin
+        jpos = fix (jchorg - j * jchsize)
+	xyouts, ipos * ps, jpos * ps, tca_label(j-1), /device, alignment=1.0, charsize=!p.charsize
+      endfor
+
+      ; while not eof (lun) do begin
+
+      on_ioerror, tca_eof
+      while 1 do begin
+	readu, lun, buf
+	byteorder, buf, /lswap, /swap_if_little_endian
+	
+	ipos = convert_coord ([buf(0)+mjtoff,row(ir).ybottom], /data, /to_device)
+	ipos = fix (ipos(0,0) / ps)
+	if ipos le column(ic).iright then begin ; patch (should be fixed above)
+	  for j = 1, tca_items do begin
+	    str = string (buf(j), format=tca_format(j-1))
+	    if tca_format(j-1) eq '(G9.2)   ' then str = strtrim (str, 2)
+	    jpos = fix (jchorg - j * jchsize)
+	    xyouts, ipos * ps, jpos * ps, str, /device, $
+	      alignment=0.5, charsize=!p.charsize
+	  endfor
+	endif
+      endwhile
+tca_eof:    on_ioerror, null
+
+      close, lun
+      free_lun, lun
+
+    endif ; any time correlated annotations
+
+  endif
+
+endfor
+
+; now do all miscellaneous labels
+
+for i = 0, labels-1 do begin
+
+  ir = label(i).row
+  ic = label(i).column
+  is = label(i).set
+  !p = set(is)
+
+  ; set up scaling
+
+  plot, /noerase, /nodata, $
+    xstyle=5,xtype=column(ic).log, [column(ic).xleft, column(ic).xright], $
+    ystyle=5,ytype=row(ir).log, [row(ir).ybottom, row(ir).ytop], $
+    position = [column(ic).ileft, row(ir).jbottom, $
+    column(ic).iright, row(ir).jtop] * ps, /device
+
+  xyouts, label(i).xp, label(i).yp, label(i).value, $
+    orientation=label(i).orientation, charsize=label(i).charsize, $
+    alignment=label(i).alignment
+
+endfor ; each label
+
+; printf, -2, '-das- finally spew the plot'
+
+pslun = 0
+on_ioerror, abort
+
+if !d.name eq 'Z' or !d.name eq 'PS' then begin
+  if batch eq 1 then begin
+    if valid_data ne 0 then begin
+      if !d.name eq 'Z' then begin
+        tvlct, r, g, b, /get
+        batchtype=strmid(batchgifname,2,3,/reverse_offset)
+        ; printf, -2, "batchtype ", batchtype
+        if strcmp('PNG', batchtype, 3, /fold_case) then $
+          write_png, batchgifname, tvrd(), r, g, b $
+        else write_gif, batchgifname, tvrd(), r, g, b
+	print, batchgifname
+      endif else if !d.name eq 'PS' then begin
+        device,/close
+	get_lun, pslun
+	openr, pslun, psfile
+	buf = ''
+	while 1 do begin
+	  readf, pslun, buf
+	  printf, -1, buf
+	endwhile
+      endif
+    endif
+  endif else begin
+;    writeu, -1, 'Status: 200 OK', 10b
+;    spawn,'echo $$',pid
+;    writeu, -1, 'ETag: 1',pid,'42', 10b
+;    spawn,/noshell,['/usr/bin/date','-u','+%%a, %%d %%b %%Y %%T %%Z'],httpdate
+;    writeu, -1, 'Date: ', httpdate, 10b
+;    writeu, -1, 'Last-Modified: ', httpdate, 10b
+;    writeu, -1, 'Pragma: no-cache', 10b
+;    writeu, -1, 'Pragma: nocache', 10b
+;    writeu, -1, 'Cache-Control: cache', 10b
+    if (valid_data ne 0) then begin
+      tvlct, r, g, b, /get
+      if !d.name eq 'Z' then begin
+;        writeu, -1, 'Content-Disposition: attachment; filename="dasplot',pid,'.gif"', 10b
+        writeu, -1, 'Content-Type: ', gif_mime_header, 10b, 10b
+        gifout, tvrd(), r, g, b
+      endif else if !d.name eq 'PS' then begin
+        device,/close
+	get_lun, pslun
+	openr, pslun, psfile
+	buf=''
+        writeu, -1, 'Content-Disposition: attachment; filename="dasplot',pid,'.eps"', 10b
+	writeu, -1, 'Content-Type: ', ps_mime_header, 10b, 10b
+	while not eof(pslun) do begin
+	  readf, pslun, buf
+	  printf, -1, buf
+	endwhile
+      endif
+    endif else begin
+      print, 'Content-type: text/html'
+      print, ''
+      print, '<HTML><HEAD><TITLE>ERROR</TITLE></HEAD>'
+      print, '<BODY><H1>ERROR:</H1>'
+      print, '<B>We could not retrieve any of the requested data.</B>'
+      print, 'Perhaps your request was out of range.<BR>'
+      if n_elements(logfile) gt 0 then begin
+        flush, -2
+	openr, inlog, dastempdir+logfile, /get_lun
+	logstring=''
+	print, '<HR><H3>Contents of log file:</H3><HR><PRE>'
+	while not eof(inlog) do begin
+	  readf, inlog, logstring
+	  print, logstring
+	endwhile
+	print, '</PRE>'
+	close, inlog
+	free_lun, inlog
+      endif else begin
+        print, '<P>The <A HREF="http://www-pw.physics.uiowa.edu/~ljg/das-idl.log">'
+        print, 'das-idl.log</A> may provide additional diagnostic information.</P>'
+      endelse
+      print, '<HR><ADDRESS>'
+      print, '<A HREF="http://www-pw.physics.uiowa.edu/~ljg/me.html">'
+      print, 'larry-granroth@uiowa.edu</A></ADDRESS>'
+      print, '</BODY></HTML>'
+      exit
+    endelse
+  endelse
+endif
+
+; single use will exit immediately after doing one plot
+if (batch eq 1) then goto, main_loop
+
+abort:
+
+if pslun ne 0 then begin
+  close, pslun
+  free_lun, pslun
+  spawn,'rm '+psfile, buf
+endif
+
+exit
+
+end
+
+giferator
+end

@@ -1,0 +1,2 @@
+description	= 'automatic wedge image for color bars'
+reader		= 'color wedge' ; special code

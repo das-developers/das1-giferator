@@ -1,0 +1,81 @@
+Giferator build/install notes
+=============================
+
+0. Setup
+--------
+export PREFIX= place where you'd like to have the software installed,
+               a lib/idl, lib/sparcv9, or lib64 directory will be created
+					under here.
+
+export IDL_BIN= path to idl version to build against
+                /local/bin/idl_5.3 is known to work on solaris 10
+
+export DAS_DATASETROOT= your prefered DSDF location
+                /opt/project/das/datasetroot is the groups main location
+
+export DAS_TEMP= your prefered log file location
+               /home/Web/tmp is what is usually used
+
+1. Build/Install/Test
+---------------------
+build:
+gmake
+
+install:
+gmake install
+
+test:
+gmake test
+kview build*/*.gif
+
+would have been nice for test to work without install but there's no
+way that i've found , short of making a *.dlm file for the c-extension
+to allow the software to run properly out of the build directory and
+still work okay in the install directory.
+
+
+2. Usage
+--------
+To use the giferator:
+
+A. Set the IDL_PATH
+B. Cat commands to idl
+C. rename batch.gif to what you'd like it to be.
+
+
+A. Set IDL_PATH
+
+One tricky of using the giferator on the command line is figuring
+out what the IDL_PATH environment variable sould be.  For 32-bit IDL 5.3
+this is:
+
+  $PREFIX/lib/idl5.3/giferator
+
+For 64-bit IDL 8.2 on linux this is:
+
+  $PREFIX/lib64/idl8.1/giferator
+  
+What ever that is, lets call it the "giferator_path".  The Cassini
+environment setup defines RPWS_IDL_PATH.  This variable doesn't include
+the module name so here's an example usage:
+
+export IDL_PATH="<IDL_DEFAULT>:${RPWS_IDL_PATH}/giferator"
+
+The <IDL_DEFAULT> above is a literal string, it's used by idl to add in it's
+default loadable module directory. 
+
+
+B. Cat commands
+
+  cat YOUR_CMD_FILE | $(RPWS_IDL)
+  
+
+
+
+
+
+
+
+
+
+
