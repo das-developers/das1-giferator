@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import os
 import sys
@@ -18,8 +18,8 @@ if len(sys.argv) < 3:
 	prn_help()
 	sys.exit(13)
 
-fIn = file(sys.argv[1], 'rb')
-fOut = file(sys.argv[2], 'wb')
+fIn = open(sys.argv[1], 'r')
+fOut = open(sys.argv[2], 'w')
 
 sFmt = fIn.read()
 fIn.close()
