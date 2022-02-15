@@ -11,10 +11,10 @@ export IDL_BIN= path to idl version to build against
                 /local/bin/idl_5.3 is known to work on solaris 10
 
 export DAS_DATASETROOT= your prefered DSDF location
-                /opt/project/das/datasetroot is the groups main location
+                /usr/local/share/das1 is a reasonable choice
 
 export DAS_TEMP= your prefered log file location
-               /home/Web/tmp is what is usually used
+               /tmp is what is usually used
 
 1. Build/Install/Test
 ---------------------

@@ -10,13 +10,11 @@ ifeq ($(PREFIX),)
 PREFIX=$(HOME)
 endif
 
-# Pick defaults for das integration, to autofind the dsdfs already setup
-# by Larry and Co, set DAS_DATASETROOT=/home/Web/das/datasetroot
+# Pick defaults for locating *.dsdf files
 ifeq ($(DAS_DATASETROOT),)
-DAS_DATASETROOT=$(PREFIX)/datasetroot
+DAS_DATASETROOT=$(PREFIX)/etc/das1
 endif
 
-# The old giferator used: /home/Web/tmp
 ifeq ($(DAS_TEMP),)
 DAS_TEMP=$(PREFIX)/tmp
 endif
