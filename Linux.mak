@@ -32,8 +32,10 @@ IDL_ARCH:=$(strip $(IDL_ARCH))
 IDL_WORDSZ:=$(shell echo 'print, !version.memory_bits' | $(IDL_BIN) 2>/dev/null)
 IDL_WORDSZ:=$(strip $(IDL_WORDSZ))
 
+ifeq ($(IDL_RELEASE),)
 IDL_RELEASE:=$(shell echo 'print, !version.release' | $(IDL_BIN) 2>/dev/null)
 IDL_RELEASE:=$(strip $(IDL_RELEASE))
+endif
 
 # Set wordsz to 32 if not defined
 ifeq ("$(IDL_WORDSZ)","")
