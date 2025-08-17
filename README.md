@@ -1,6 +1,8 @@
 # das1-giferator
 Server-side graphics engine for The University of Iowa plasma wave group das (or das1 or das classic) system
 
+Initial attempt at port to Python . . .
+
 Giferator utilizes the [NV5 Geospatial IDL language](https://www.nv5geospatialsoftware.com/Products/IDL).
 It was initially designed as a CGI application for web servers such that HTML forms could specify datasets,
 detailed plot layout, readers, and reader parameters.  The plot generator can also be used in scripts that specify
