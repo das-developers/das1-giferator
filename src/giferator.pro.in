@@ -354,8 +354,8 @@ for i = 0, columns-1 do begin
     jd1 = 0L
     off0 = 0.0d0
     off1 = 0.0d0
-    if call_external (gifmoddir + '/ljgidl.so', 'str2jdoff', column(i).tleft, jd0, off0) $
-     + call_external (gifmoddir + '/ljgidl.so', 'str2jdoff', column(i).tright, jd1, off1) $
+    if str2jdoff(column(i).tleft, jd0, off0) $
+     + str2jdoff(column(i).tright, jd1, off1) $
       eq 2 then begin
       trange = float (off1 - off0) + float (jd1 - jd0) * 86400.0
       column(i).xleft = 0.0
@@ -382,8 +382,8 @@ for i = 0, rows-1 do begin
     jd1 = 0L
     off0 = 0.0d0
     off1 = 0.0d0
-    if call_external (gifmoddir + 'ljgidl.so', 'str2jdoff', row(i).tbottom, jd0, off0) $
-     + call_external (gifmoddir + 'ljgidl.so', 'str2jdoff', row(i).ttop, jd1, off1) $
+    if str2jdoff(row(i).tbottom, jd0, off0) $
+     + str2jdoff(row(i).ttop, jd1, off1) $
       eq 2 then begin
       trange = float (off1 - off0) + float (jd1 - jd0) * 86400.0
       row(i).xbottom = 0.0
