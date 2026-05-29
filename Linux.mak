@@ -62,12 +62,12 @@ export INST_IDLLIB
 
 
 ##############################################################################
-
-CC=gcc
-
+#
+#CC=gcc
+#
 # Sharable objects for use with RSI/IDL CALL_EXTERNAL
-CFLAGS= $(GCC_WORDFLG) -O -shared -fPIC
-
+#CFLAGS= $(GCC_WORDFLG) -O -shared -fPIC
+#
 ##############################################################################
 
 # Source order is IMPORTANT!  List dependencies of the main program first
@@ -76,7 +76,8 @@ CFLAGS= $(GCC_WORDFLG) -O -shared -fPIC
 #  jd2ymd.pro ymd2jd.pro stress.pro strep.pro sechms.pro xbin.pro sinterp.pro \
 #  giferator.pro
   
-IDL_SRCS= date2ymd.pro delchr.pro fndwrd.pro getwrd.pro gifout.pro nearest.pro \
+IDL_SRCS= parsetime.pro str2jdoff.pro \
+ date2ymd.pro delchr.pro fndwrd.pro getwrd.pro gifout.pro nearest.pro \
  inrange.pro isnumber.pro jd2ymd.pro js2ymds.pro makex.pro makexy.pro \
  monthnames.pro nthweekday.pro nwrds.pro repchr.pro sechms.pro secstr.pro \
  sinterp.pro strep.pro stress.pro strsub.pro tnaxes.pro weekday.pro xbin.pro \
@@ -110,7 +111,8 @@ $(INST_IDLLIB)/%.pro:$(BUILD_DIR)/%.pro
 
 .PHONY : test install
 
-build: $(BUILD_DIR)  $(BUILD_DIR)/giferator.sav $(BUILD_DIR)/ljgidl.so
+build: $(BUILD_DIR)  $(BUILD_DIR)/giferator.sav
+# $(BUILD_DIR)/ljgidl.so
 
 $(BUILD_DIR):
 	mkdir $(BUILD_DIR)
@@ -123,12 +125,14 @@ $(BUILD_DIR)/giferator.sav:$(IDL_SRCS_BLD)
 	@echo
 	cd $(BUILD_DIR) && (cat compile.cmd | $(IDL_BIN))
 	
-$(BUILD_DIR)/ljgidl.so:src/ljgidl.c
-	$(CC) $(CFLAGS) $< -o $@
+#$(BUILD_DIR)/ljgidl.so:src/ljgidl.c
+#	$(CC) $(CFLAGS) $< -o $@
 
 
 install: build $(INST_IDLLIB)/giferator.pro $(INST_IDLLIB)/giferator.sav \
-         $(INST_IDLLIB)/ljgidl.so $(DAS_DATASETROOT)/color_wedge.dsdf
+         $(DAS_DATASETROOT)/color_wedge.dsdf
+
+# $(INST_IDLLIB)/ljgidl.so
 
 $(DAS_DATASETROOT)/color_wedge.dsdf:test/color_wedge.dsdf
 	install -D -m 664 $< $@
@@ -136,8 +140,8 @@ $(DAS_DATASETROOT)/color_wedge.dsdf:test/color_wedge.dsdf
 $(INST_IDLLIB)/giferator.sav:$(BUILD_DIR)/giferator.sav
 	install -D -m 664 $< $@
 
-$(INST_IDLLIB)/ljgidl.so:$(BUILD_DIR)/ljgidl.so
-	install -D -m 775 $< $@
+#$(INST_IDLLIB)/ljgidl.so:$(BUILD_DIR)/ljgidl.so
+#	install -D -m 775 $< $@
 
 test: install $(BUILD_DIR)/gll-wideband_1997-05-06_1300_1510.gif
 

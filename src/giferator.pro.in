@@ -27,6 +27,7 @@
 ; 2012-10-30 added lookup of datasetroot from env variable to help with
 ;            make test targets
 ; 2012-12-06 variable batchgifname.  LJG
+; 2026-05-28 sanitize commands before execution.  LJG and Gemini
 ;
 ;------------------------------------------------------------------------
 
@@ -48,6 +49,85 @@ end
 
 pro loadstr, dest, source
 if dest eq '' and n_elements (source) gt 0 then dest = source
+end
+
+; sanitize commands
+
+function sanitize_command, command
+
+  clean_cmd = strtrim(command, 2)
+
+  ; Ignore empty spaces and comment lines safely
+  if clean_cmd eq '' or strmid(clean_cmd, 0, 1) eq ';' then return, 2
+
+  ; 1. Verify structural assignment layout
+  eq_pos = strpos(clean_cmd, '=')
+  if eq_pos eq -1 then begin
+    printf, -2, 'SECURITY VIOLATION: Command lacks a valid assignment operator (=): ', command
+    return, 0
+  endif
+
+  ; 2. Segment Left-Hand Side (LHS) and Right-Hand Side (RHS)
+  lhs = strlowcase(strtrim(strmid(clean_cmd, 0, eq_pos), 2))
+  rhs = strlowcase(strtrim(strmid(clean_cmd, eq_pos + 1), 2))
+
+  ; 3. Left-Hand Side Structural Whitelist Verification
+  valid_prefix = 0
+
+  ; Allow standard indexed graphic object sub-arrays
+  if (strmid(lhs, 0, 4) eq 'row(')      then valid_prefix = 1
+  if (strmid(lhs, 0, 7) eq 'column(')   then valid_prefix = 1
+  if (strmid(lhs, 0, 9) eq 'colormap(') then valid_prefix = 1
+  if (strmid(lhs, 0, 6) eq 'image(')    then valid_prefix = 1
+  if (strmid(lhs, 0, 5) eq 'plot(')     then valid_prefix = 1
+  if (strmid(lhs, 0, 5) eq 'axis(')     then valid_prefix = 1
+  if (strmid(lhs, 0, 6) eq 'label(')    then valid_prefix = 1
+  if (strmid(lhs, 0, 4) eq 'set(')      then valid_prefix = 1
+
+  ; Allow template initialization fields
+  if (strmid(lhs, 0, 6) eq 'row_i.')      then valid_prefix = 1
+  if (strmid(lhs, 0, 9) eq 'column_i.')   then valid_prefix = 1
+  if (strmid(lhs, 0, 11) eq 'colormap_i.') then valid_prefix = 1
+  if (strmid(lhs, 0, 8) eq 'image_i.')    then valid_prefix = 1
+  if (strmid(lhs, 0, 7) eq 'plot_i.')     then valid_prefix = 1
+  if (strmid(lhs, 0, 7) eq 'axis_i.')     then valid_prefix = 1
+  if (strmid(lhs, 0, 8) eq 'label_i.')    then valid_prefix = 1
+  if (strmid(lhs, 0, 6) eq 'set_i.')      then valid_prefix = 1
+
+  ; Allow core global canvas configuration fields
+  if (strmid(lhs, 0, 8) eq 'display.')    then valid_prefix = 1
+
+  ; Allow direct explicit global variables & scalars
+  if (lhs eq 'rows') or (lhs eq 'columns') or (lhs eq 'colormaps') or $
+     (lhs eq 'sets') or (lhs eq 'queries') or (lhs eq 'images') or $
+     (lhs eq 'plots') or (lhs eq 'axes') or (lhs eq 'labels') or $
+     (lhs eq 'gray') or (lhs eq 'referer') or (lhs eq 'logfile') or $
+     (lhs eq 'device_name') or (lhs eq 'gif_mime_header') or $
+     (lhs eq 'ps_mime_header') or (lhs eq 'ps_font_point') or $
+     (lhs eq 'batch') or (lhs eq 'batchgifname') then valid_prefix = 1
+
+  if valid_prefix eq 0 then begin
+    printf, -2, 'SECURITY VIOLATION: Blocked unauthorized variable destination: ', lhs
+    return, 0
+  endif
+
+  ; 4. Right-Hand Side Command Trapping Blacklist
+  if (strpos(rhs, 'spawn')         ne -1) or $
+     (strpos(rhs, 'execute')       ne -1) or $
+     (strpos(rhs, 'call_external') ne -1) or $
+     (strpos(rhs, 'online_help')   ne -1) then begin
+    printf, -2, 'SECURITY VIOLATION: Shell breakout keyword detected in value: ', command
+    return, 0
+  endif
+
+  ; 5. Path Traversal Guard for Dataset Descriptions
+  if (strpos(lhs, '.dataset') ne -1) and (strpos(rhs, '..') ne -1) then begin
+    printf, -2, 'SECURITY VIOLATION: Directory traversal attempt blocked in dataset path: ', command
+    return, 0
+  endif
+
+  ; Statement verified successfully
+  return, 1
 end
 
 ;- giferator ------------------------------------------------------------
@@ -186,8 +266,14 @@ valid_data = 0
 command = ''
 
 while command ne 'init' and command ne 'go' and command ne 'abort' do begin
-  printf, -2, command
-  status = execute (command)
+  cmd_status = sanitize_command(command)
+  if cmd_status eq 1 then begin
+    printf, -2, command
+    status = execute (command)
+  endif else if cmd_status eq 0 then begin
+    command = 'abort'
+    break
+  endif
   read, command
 endwhile
 
@@ -217,8 +303,14 @@ if command eq 'init' then begin
 endif
 
 while command ne 'go' and command ne 'abort' do begin
-  printf, -2, command
-  status = execute (command)
+  cmd_status = sanitize_command(command)
+  if cmd_status eq 1 then begin
+    printf, -2, command
+    status = execute (command)
+  endif else if cmd_status eq 0 then begin
+    command = 'abort'
+    break
+  endif
   read, command
 endwhile
 
@@ -363,7 +455,7 @@ for i = 0, columns-1 do begin
       column(i).jd = jd0
       column(i).offset = off0
     endif else begin
-      print, -2, $
+      printf, -2, $
         'Bad time specification "'+column(i).tleft+'" "'+column(i).tright+'"'
       column(i).xleft = 0.0
       column(i).xright = 0.0
@@ -391,7 +483,7 @@ for i = 0, rows-1 do begin
       row(i).jd = jd0
       row(i).offset = off0
     endif else begin
-      print, $
+      printf, -2, $
         'Bad time specification "'+row(i).tbottom+'" "'+row(i).ttop+'"'
       row(i).xbottom = 0.0
       row(i).xtop = 0.0
