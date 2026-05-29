@@ -1,4 +1,4 @@
-function str2jdoff timestr, jd, off
+function str2jdoff, timestr, jd, off
 
 ;+
 ; NAME:
@@ -33,10 +33,10 @@ function str2jdoff timestr, jd, off
 
   if n_params() lt 3 then begin
     message, 'Usage: result = str2jdoff (timestr, jd, off)'
-    return 0
+    return, 0
   endif
 
-  if not parsetime(timestr, year, month, day_month, day_year, hour, minute, second) then $         return 0
+  if not parsetime(timestr, year, month, day_month, day_year, hour, minute, second) then return, 0
 
   jd = 367L * year - 7L * (year + (month + 9L) / 12L) / 4L - $
        3L * ((year + (month - 9L) / 7L) / 100L + 1L) / 4L + $
@@ -44,6 +44,6 @@ function str2jdoff timestr, jd, off
 
   off = second + double(minute) * 60.0 + double(hour) * 3600.0
 
-  return 1
+  return, 1
 
 end
