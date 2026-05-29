@@ -214,8 +214,10 @@ for i = 0, n do begin
         if s eq 'sep' then month = 9 else $
         if s eq 'oct' then month = 10 else $
         if s eq 'nov' then month = 11 else $
-        if s eq 'dec' then month = 12 else $
-        message, 'PARSETIME FATAL ERROR: month: '+s
+        if s eq 'dec' then month = 12 else begin $
+          printf, -2, 'PARSETIME ERROR: invalid month: '+s
+	  return, failure
+	endelse
       endif else begin
         printf, -2, 'PARSETIME ERROR: input string "', timestr, $
           '" date component "', s, '"'
@@ -232,7 +234,7 @@ for i = 0, n do begin
 endfor
 
 if year lt 0 then begin ; default to current date
-  julian = systime(/julian)
+  julian = systime(/julian, /utc)
   caldat, julian, month, day, year
   want_date = 0
   allow_hhmm = 0
@@ -334,7 +336,10 @@ if strlen(stime) gt 0 then begin
           reads, s, second, format='(i2)' $
         else if pattern_time[j,i] eq 'sss' then $
           reads, '0.'+s, fsecond, format='(f8)' $
-        else message, 'PARSETIME FATAL ERROR: time component: '+s
+        else begin
+	  printf, -2, 'PARSETIME ERROR: invalid time component: '+s
+	  return, failure
+	endelse
         ip = ip + len
         length = length-ip
         stime = strmid (stime, ip, length)
