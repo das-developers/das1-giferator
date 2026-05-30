@@ -137,7 +137,7 @@ pro giferator
 ; things that should be handled in environment variables
 
 datasetroot = getenv('DAS_DATASETROOT') + '/'
-if datasetroot eq '/' then datasetroot = '%(DAS_DATASETROOT)s'
+if datasetroot eq '/' then datasetroot = '%(DAS_DATASETROOT)s/'
 
 dastempdir = getenv('DAS_TEMP')
 if dastempdir eq '' then dastempdir = '%(DAS_TEMP)s'

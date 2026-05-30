@@ -24,7 +24,7 @@ function str2jdoff, timestr, jd, off
 ;       off: double precision second of the UT day
 ;
 ; RESTRICTIONS:
-;       See PARSETIME restrictions.
+;       See PARSETIME restrictions.  Note parsetime returns 0 on success.
 ;
 ; MODIFICATION HISTORY:
 ;       Written by L.J. Granroth, 2025-08-17
@@ -36,7 +36,7 @@ function str2jdoff, timestr, jd, off
     return, 0
   endif
 
-  if not parsetime(timestr, year, month, day_month, day_year, hour, minute, second) then return, 0
+  if parsetime(timestr, year, month, day_month, day_year, hour, minute, second) then return, 0
 
   jd = 367L * year - 7L * (year + (month + 9L) / 12L) / 4L - $
        3L * ((year + (month - 9L) / 7L) / 100L + 1L) / 4L + $
