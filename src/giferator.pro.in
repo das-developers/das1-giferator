@@ -227,7 +227,7 @@ initvar, plot_i, {plot_s, row:0, column:0, set:0, multi:0, $
 
 initvar, plotinfo, {plotinfo_s, lun:0, begline:0, endline:0}
 
-initvar, set_i, [!p]
+initvar, set_i, !p
 
 initvar, query_i, {query_s, query:''}
 
