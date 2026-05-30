@@ -1,5 +1,8 @@
-#!/opt/csw/bin/perl
+#!/usr/bin/perl
 #
+# 2012-10-26 modifications for IDL beyond 5.3  LJG
+# 2020-01-21 modifications for IDL 8.2 on Linux  LJG
+#   This version belongs in /planet/das/cgi/das-idl8
 ##
 
 use CGI;
@@ -7,50 +10,24 @@ use CGI;
 $query = new CGI;
 $logfile = 'das.'.$query->remote_addr().'.log';
 
-open(LOG, ">/home/Web/tmp/$logfile") or
+open(LOG, ">/planet/tmp/$logfile") or
   &PrintErrorExit ("Cannot open log file $logfile");
 $referer = $query->referer();
-chmod(0666, "/home/Web/tmp/$logfile");
+chmod(0666, "/planet/tmp/$logfile");
 $saveSTDERR = *STDERR;
 *STDERR = *LOG;
 
-if (0 && $query->remote_host =~ /\./) {
-  &PrintHeader;
-  print <<EOH;
-<H3><img src="/gifs/construc.gif" alt=""> Repairs in Progress . . .</H3>
-<hr>
-<p>We're sorry, but external access is restricted until some bugs can be
-squashed.</p>
-<p>Under none-too-uncommon circumstances the server is sent into
-an infinite loop if the client refuses to accept all of the data (plot).</p>
-<p>If you <b>know how to avoid this bug</b> and <i>really</i> need to make
-a plot from a remote site, and know the <a href="/datasetroot">name of
-the dataset</a> that you want to plot, you can try
-<a href="/~ljg/das-old.html">this form</a>.</p>
-
-EOH
-  &PrintTrailer;
-  exit(0);
-}
-
 # Setup IDL environment
 
-$ENV{'RSI_DIR'} = '/local/rsi';
-$idl_dir  = '/local/rsi/idl_5.3';
+$idl_dir  = '/project/spdr/opt/nv5/idl89';
 $ENV{'IDL_DIR'} = $idl_dir;
-$ENV{'PATH'} = '/usr/bin:/bin:/opt/csw/bin:/local/rsi/idl_5.3/bin';
-$ENV{'LM_LICENSE_FILE'} = '/local/itt/license/license.dat';
-#$ENV{'IDL_PATH'}  ="\+$idl_dir/lib";
-#$ENV{'IDL_STARTUP'} = '' if $ENV{'IDL_STARTUP'};
-#$ENV{'LD_LIBRARY_PATH'} = "/home/ljg/lib";
-$ENV{'LD_LIBRARY_PATH'} = "/usr/lib:/opt/SUNWspro/lib:/usr/openwin/lib:/usr/dt/lib:/opt/csw/lib:/local/lib:/opt/local/lib";
-#$ENV{'LD_LIBRARY_PATH'} = "/usr/lib";
+$ENV{'PATH'} = '/usr/bin:/bin:/project/spdr/opt/nv5/idl89/bin:/usr/local/bin';
 
 print LOG "CGI shell environment:\n", `env`, "\nIDL transactions:\n";
 
 # Open pipe to IDL process
 
-if (!open(PROG, "| /local/bin/idl 2>> /home/Web/tmp/$logfile")) {
+if (!open(PROG, "| $idl_dir/bin/idl 2>> /planet/tmp/$logfile")) {
   &PrintHeader;
   print "<H1>ERROR: Could not open pipe to IDL process</H1>\n";
   &PrintTrailer;
@@ -61,26 +38,22 @@ if (!open(PROG, "| /local/bin/idl 2>> /home/Web/tmp/$logfile")) {
 
 print PROG <<EOH;
 ON_ERROR, 1
-CD, '/home/Web/das/idl/'
+CD, '/planet/das/idl8/'
 RESTORE, 'gifer.idl'
-;.RUN xbin.pro
-;.RUN tnaxes.pro
-;.RUN dasbin.pro
-;.RUN sinterp.pro
 .RUN giferator.pro
 referer = "$referer"
 logfile = "$logfile"
 EOH
 
 # check to see whether we were in demo mode due to all of the
-# licenses being checked out
+# licenses being checked out (need to update)
 
-$line=`head -2 /home/Web/tmp/$logfile | tail -1`;
-if ($line =~ ".+LICENSE MANAGER.+") {
-  &PrintErrorExit("All IDL licenses checked out");
-}
+#$line=`head -2 /planet/tmp/$logfile | tail -1`;
+#if ($line =~ ".+LICENSE MANAGER.+") {
+#  &PrintErrorExit("All IDL licenses checked out");
+#}
 
-if ($0 =~ /das-gray.cgi/ || $query->param('gray scale')) {
+if ($query->param('gray scale')) {
   print PROG<<EOH;
   gray=interpolate([255,0],(findgen(200)/199.))
   display.color.r=gray
@@ -116,9 +89,9 @@ EOH
 
 if ($query->param('axis(0).x.title') =~ /SCET/) {
   $begtime = $query->param('column(0).tleft');
-  $begtime = `/home/ljg/bin/ptime $begtime`; chop $begtime;
+  $begtime = `/local/bin/prtime $begtime`; chop $begtime;
   $endtime = $query->param('column(0).tright');
-  $endtime = `/home/ljg/bin/ptime $endtime`; chop $endtime;
+  $endtime = `/local/bin/prtime $endtime`; chop $endtime;
   $query->param('axis(0).x.title', "\'$begtime    SCET    $endtime\'");
 }
 
@@ -163,7 +136,7 @@ sub PrintTrailer {
   print <<EOH;
 <HR>
 <ADDRESS>
-<A HREF="http://www-pw.physics.uiowa.edu/~ljg/me.html">
+<A HREF="https://space.physics.uiowa.edu/~ljg/">
 larry-granroth\@uiowa.edu</A>
 </ADDRESS>
 </BODY>
@@ -178,7 +151,7 @@ sub PrintErrorExit {
   print "<HR><H3>Contents of log file:</H3><HR><PRE>\n";
   *STDERR = $saveSTDERR;
   close (LOG);
-  if ( open (LOG, "</home/Web/tmp/$logfile") ) {
+  if ( open (LOG, "</planet/tmp/$logfile") ) {
     while ( <LOG> ) { print $_; }
     close (LOG);
   } else { print "<EM>Cannot open log file.</EM>\n"; }

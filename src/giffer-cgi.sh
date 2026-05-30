@@ -5,6 +5,9 @@
 # Relies on the oinkzwurgl.org framework for clean associative array mapping
 #
 
+export DAS_TEMP="${DAS_TEMP:-/planet/tmp}"
+export INST_IDLLIB="${INST_IDLLIB:-/planet/das/idl9}"
+
 # --- 1. System Headers & Error Page Handling ---
 
 PrintHeader() {
@@ -33,8 +36,8 @@ PrintErrorExit() {
   # Safe recovery of file descriptor 2 to avoid logging loops
   exec 2>&3
   
-  if [ -r "/planet/tmp/${logfile}" ]; then
-    cat "/planet/tmp/${logfile}"
+  if [ -r "${DAS_TEMP}/${logfile}" ]; then
+    cat "${DAS_TEMP}/${logfile}"
   else
     echo "<EM>Cannot open or view diagnostic log file.</EM>"
   fi
@@ -96,12 +99,12 @@ parse_cgi_input() {
 # --- 3. Initial Sandbox Configuration and Stream Hijacking ---
 
 logfile="das.${REMOTE_ADDR}.log"
-touch "/planet/tmp/${logfile}" 2>/dev/null
-chmod 0666 "/planet/tmp/${logfile}" 2>/dev/null
+touch "${DAS_TEMP}/${logfile}" 2>/dev/null
+chmod 0666 "${DAS_TEMP}/${logfile}" 2>/dev/null
 
 # Blindly isolate file descriptor 2 to keep stderr artifacts from breaking the HTTP stream
 exec 3>&2
-exec 2>"/planet/tmp/${logfile}"
+exec 2>"${DAS_TEMP}/${logfile}"
 
 FATAL_SECURITY_VIOLATION=0
 parse_cgi_input
@@ -111,14 +114,14 @@ if [ $FATAL_SECURITY_VIOLATION -eq 1 ]; then
 fi
 
 # Define Isolated System Paths
-export IDL_DIR="/project/spdr/opt/nv5/idl89"
-export PATH="/usr/bin:/bin:/project/spdr/opt/nv5/idl89/bin:/usr/local/bin"
+export IDL_DIR="/project/spdr/opt/nv5/idl90"
+export PATH="/usr/bin:/bin:/project/spdr/opt/nv5/idl90/bin:/usr/local/bin"
 
 echo -e "CGI shell environment:\nenv\nIDL transactions:" >&2
 env >&2
 
 # Establish a secure downstream pipeline to the execution engine
-exec 4> >(${IDL_DIR}/bin/idl 2>> "/planet/tmp/${logfile}")
+exec 4> >(${IDL_DIR}/bin/idl)
 if [ $? -ne 0 ]; then
   PrintHeader
   echo "<H1>ERROR: Could not open pipe to downstream scientific processing core.</H1>"
@@ -129,8 +132,8 @@ fi
 # Send default compilation and environment directives
 cat << EOH >&4
 ON_ERROR, 1
-CD, '/planet/das/idl8/'
-RESTORE, 'gifer.idl'
+CD, "${DAS_TEMP}"
+RESTORE, 'giferator.sav'
 .RUN giferator.pro
 referer = "${HTTP_REFERER}"
 logfile = "${logfile}"
