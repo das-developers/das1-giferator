@@ -118,7 +118,7 @@ echo -e "CGI shell environment:\nenv\nIDL transactions:" >&2
 env >&2
 
 # Establish a secure downstream pipeline to the execution engine
-exec 4> >(${IDL_DIR}/bin/idl >> "/planet/tmp/${logfile}" 2>&1)
+exec 4> >(${IDL_DIR}/bin/idl 2>> "/planet/tmp/${logfile}")
 if [ $? -ne 0 ]; then
   PrintHeader
   echo "<H1>ERROR: Could not open pipe to downstream scientific processing core.</H1>"
