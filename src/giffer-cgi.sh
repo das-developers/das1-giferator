@@ -5,8 +5,9 @@
 # Relies on the oinkzwurgl.org framework for clean associative array mapping
 #
 
-export DAS_TEMP="${DAS_TEMP:-/planet/tmp}"
-export INST_IDLLIB="${INST_IDLLIB:-/planet/das/idl9}"
+DAS_TEMP="${DAS_TEMP:-/planet/tmp}"
+INST_IDLLIB="${INST_IDLLIB:-/planet/das/idl9}"
+PRTIME="/project/spdr/bin/prtime"
 
 # --- 1. System Headers & Error Page Handling ---
 
@@ -178,12 +179,12 @@ fi
 if [[ "${cgi_params['axis(0).x.title']}" == *"SCET"* ]]; then
   begtime="${cgi_params['column(0).tleft']}"
   if [ -n "$begtime" ]; then
-    begtime=$(/local/bin/prtime "$begtime" 2>/dev/null)
+    begtime=$($PRTIME "$begtime" 2>/dev/null)
   fi
   
   endtime="${cgi_params['column(0).tright']}"
   if [ -n "$endtime" ]; then
-    endtime=$(/local/bin/prtime "$endtime" 2>/dev/null)
+    endtime=$($PRTIME "$endtime" 2>/dev/null)
   fi
   
   cgi_params['axis(0).x.title']="'${begtime}    SCET    ${endtime}'"
