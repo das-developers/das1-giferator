@@ -132,7 +132,7 @@ fi
 # Send default compilation and environment directives
 cat << EOH >&4
 ON_ERROR, 1
-CD, "${DAS_TEMP}"
+CD, "${INST_IDLLIB}"
 RESTORE, 'giferator.sav'
 .RUN giferator.pro
 referer = "${HTTP_REFERER}"
